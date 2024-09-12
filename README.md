@@ -1,16 +1,19 @@
 Automatically copies new/changed files to kubernetes deployment
 
+## Pre-requisites
+
+- inotify-tools
+
 ## Building and installing
 
 ```bash
-go build ./... -o auto-k8s-cp
-sudo install auto-k8s-cp /usr/local/bin
+sudo install auto-kubectl-cp /usr/local/bin
 ```
 
 ## Usage
 
 ```
-auto-k8s-cp FLAGS
+auto-kubectl-cp FLAGS
 
 FLAGS:
 Usage of /tmp/go-build1860283438/b001/exe/main:
@@ -24,12 +27,14 @@ Usage of /tmp/go-build1860283438/b001/exe/main:
         Local path to monitor for file changes
   --namespace string
         Kubernetes namespace
+  --help
+        Print this help message
 ```
 
 Example:
 
 ```bash
-auto-k8s-copy --local-path="." --deployment="log-test9-patchdemo" --container="patchdemo" --container-path="/var/www/html" --namespace="default"
+auto-k8s-copy --local-path "." --deployment "log-test9-patchdemo" --container "patchdemo" --container-path "/var/www/html" --namespace "default"
 ```
 
 ## License

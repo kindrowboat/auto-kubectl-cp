@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+
+# Function to print help
+print_help() {
+    echo "Usage: $0 --local-path <local-path> --deployment <deployment> --container <container> --container-path <container-path> [--namespace <namespace>]"
+    echo ""
+    echo "Options:"
+    echo "  --local-path        Local path to monitor for file changes."
+    echo "  --deployment        Kubernetes deployment name."
+    echo "  --container         Container name in the deployment's pods."
+    echo "  --container-path    Path inside the container to copy files to."
+    echo "  --namespace         (Optional) Kubernetes namespace. If not provided, default namespace is used."
+    echo "  --help              Display this help message."
+    exit 0
+}
+
+# Function to sync file to all pods in the deployment
+sync_file_to_pods() {
+    local file_path=$1
+    local deployment_name=$2
+    local container_name=$3
+    local container_path=$4
+    local namespace=$5
+
+    # Get pod names in the deployment
+    pods=$(get_pods_in_deployment "$deployment_name" "$namespace")
+    if [ $? -ne 0 ]; then
+        echo "Error getting pods"
+        exit 1
+    fi
+
+    # Copy file to each pod
+    for pod in $pods; do
+        copy_file_to_container "$pod" "$file_path" "$container_name" "$container_path" "$namespace"
+        if [ $? -eq 0 ]; then
+            echo "Copied $file_path to $pod:$container_path"
+        else
+            echo "Error copying file to pod $pod"
+        fi
+    done
+}
+
+# Function to get the pods in the deployment
+get_pods_in_deployment() {
+    local deployment_name=$1
+    local namespace=$2
+
+    if [ -n "$namespace" ]; then
+        kubectl_args="-n $namespace"
+    fi
+
+    kubectl get pods -l "app=$deployment_name" -o jsonpath='{.items[*].metadata.name}' $kubectl_args
+}
+
+# Function to copy a file to a pod container
+copy_file_to_container() {
+    local pod=$1
+    local file_path=$2
+    local container_name=$3
+    local container_path=$4
+    local namespace=$5
+
+    local file_name=$(basename "$file_path")
+    if [ -n "$namespace" ]; then
+        kubectl_args="-n $namespace"
+    fi
+
+    kubectl cp "$file_path" "$pod:$container_path/$file_name" -c "$container_name" $kubectl_args
+}
+
+# Function to monitor directory for changes
+monitor_directory() {
+    local local_path=$1
+    local deployment_name=$2
+    local container_name=$3
+    local container_path=$4
+    local namespace=$5
+
+    inotifywait -m -e modify,create --format '%w%f' "$local_path" | while read file; do
+        echo "File changed: $file"
+        sync_file_to_pods "$file" "$deployment_name" "$container_name" "$container_path" "$namespace"
+    done
+}
+
+# Main entry point
+main() {
+    local local_path=""
+    local deployment_name=""
+    local container_name=""
+    local container_path=""
+    local namespace=""
+
+    # Parse command-line arguments
+    while [[ "$#" -gt 0 ]]; do
+        case $1 in
+            --local-path) local_path="$2"; shift ;;
+            --deployment) deployment_name="$2"; shift ;;
+            --container) container_name="$2"; shift ;;
+            --container-path) container_path="$2"; shift ;;
+            --namespace) namespace="$2"; shift ;;
+            --help) print_help ;;
+            *) echo "Unknown parameter passed: $1"; print_help ;;
+        esac
+        shift
+    done
+
+    if [[ -z "$local_path" || -z "$deployment_name" || -z "$container_name" || -z "$container_path" ]]; then
+        echo "All arguments except namespace are required. Use --help for more info."
+        exit 1
+    fi
+
+    # Monitor directory and sync files
+    monitor_directory "$local_path" "$deployment_name" "$container_name" "$container_path" "$namespace"
+}
+
+main "$@"
